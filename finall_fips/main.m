@@ -1,0 +1,668 @@
+%% Define your sequence here (0s and 1s)
+% sequence = randi([0 1],1,20000);
+clc
+clear
+close all force
+%% ------------------- Initialization -------------------
+k = 512;
+n = 1024;
+t = 50;
+sum_diagonal = 0;       % Sum diagonal
+iter = 0;               % Number of iterations required to find a matrix suitable for systematizing.
+%% ------------------- Transform to systematic form -------------------
+%%%%%%%%%%%%% Modify Lower of Identity Part %%%%%%%%%%%%%
+while sum_diagonal ~= n-k  % Check it is systematic or not.
+    sum_diagonal = 0;
+    j = 0;
+    H = randi([0, 1], n-k, n); % Generate random parity-check matrix
+    H_non_sys = H;
+    onesD = [];
+    for i = n-k+1 : n
+        j = j+1;
+        onesD = find(H(j+1:end,i) == 1);
+        onesD = onesD + j;
+        if H(j,i) == 0
+            if ~isempty(onesD)
+                H(j,:) = mod(H(j,:)+H(onesD(1),:),2);
+                for j_2 = 1:size(onesD,1)
+                    H(onesD(j_2),:) = mod(H(j,:) +  H(onesD(j_2),:),2);
+                end
+            end
+        else
+            for j_3 = 1:size(onesD,1)
+                H(onesD(j_3),:) = mod(H(j,:) +  H(onesD(j_3),:),2);
+            end
+        end
+
+    end
+    diagonal = diag(H(1:n-k,n-k+1:n));
+    sum_diagonal = sum(diagonal);
+    iter = iter +1;
+end
+%%%%%%%%%%%%% Modify Upper of Identity Part %%%%%%%%%%%%%
+col = n;
+for i = n-k : -1 : 1
+    onesU = find(H(1:i-1,col) == 1);
+    for j_1 = 1:size(onesU,1)
+        H(onesU(j_1),:) = mod(H(onesU(j_1),:) + H(i,:) ,2);
+    end
+    col = col - 1;
+end
+%% ------------------- Validation -------------------
+P = H(1:n-k,1:n-k);
+I = eye(k);
+G = [I P'];
+%%
+r = randi([0 1],1,k);
+%%
+row_number = 12;
+G_share_1 = zeros(row_number,n);
+for i = 1:row_number
+    index_G = find(r==1);
+    for j = 1:size(index_G,2)
+        G_share_1(i,:) = mod(G(index_G(j),:)+G_share_1(i,:),2);
+    end
+    r = circshift(r,1);
+end
+%%
+G_share_2 = repmat(G_share_1,43,1);
+
+% Remove the last row to get a 512x1024 matrix
+G_share_2 = G_share_2(1:512,:);
+%% 
+% r = randi([0 1],1,k);
+% e = generate_random_binary_vector(n,t);
+% cipher_text = mod(r*G_share_2+e,2);
+% len = length(cipher_text);
+% while len <= 20000
+%     r = randi([0 1],1,k);
+%     e = generate_random_binary_vector(n,t); 
+%     tempt_seq1 = mod(r*G_share_2+e,2);
+%     cipher_text = [cipher_text tempt_seq1];
+%     len = length(cipher_text);
+% end
+
+%% output
+Monobit_c = [];
+Monobit_p = [];
+
+
+%% Cipher Text & r x P_Pub
+tic
+for jj = 1:1000
+ %reset
+cipher_text = [];
+pre_pub =[];
+tempt_seq1 =[];
+tempt_seq2 = [];
+G_share_new = [];
+n = 1024;
+while  length(cipher_text) <= 20000
+    r = randi([0 1],1,k);
+    index1 = randi([1 512],1,512);
+    index2 = randi([1 512],1,512);
+    G_share_new = G_share_2(index1, :);
+    for i = 1:2:512
+        G_share_new(index1(i),:) = bitxor(G_share_new(i,:),G_share_new(index1(i),:));
+    end
+    for i = 2:2:512
+        G_share_new(index1(i),:) = mod(G_share_new(i,:) + G_share_new(index1(i),:) + G_share_new(index2(i),:),2);
+    end
+    tempt_seq2 = mod(r*G_share_new,2);
+    pre_pub = [pre_pub tempt_seq2]; % r x P_Pub
+    e = generate_random_binary_vector(n,t); 
+    tempt_seq1 = mod(r*G_share_new + e ,2);
+    cipher_text = [cipher_text tempt_seq1]; %cipher_text
+    
+    len = length(cipher_text);
+end
+%% r x P_Pub
+% while len <= 20000
+%     r = randi([0 1],1,k);
+%     index = randi([1 512],1,512);
+%     G_share_new = G_share_2(index, :);
+%     for i = 1:250
+%         G_share_new(index(i),:) = bitxor(G_share_new(i,:),G_share_new(index(i),:));
+%     end
+%     tempt_seq1 = mod(r*G_share_new,2);
+%     pre_pub = [pre_pub tempt_seq1];
+%     len = length(pre_pub);
+% end
+
+
+
+
+
+
+
+
+
+%%%%%%%%%% Test randomness and plot probability distribution %%%%%%%%%%
+%% Monobit test
+[~, ~, num_ones_c(jj)] = Monobit(cipher_text(1:20000));
+[~, ~, num_ones_p(jj)] = Monobit(pre_pub(1:20000));
+Monobit_c(jj) = num_ones_c(jj);
+Monobit_p(jj) = num_ones_p(jj);
+
+% if is_random
+%     disp('The sequence is random.');
+% else
+%     disp('The sequence is not random.');
+% end
+% disp(['P-value: ' num2str(p_value)]);
+%% Poker test
+%  poker_test(cipher_text(1:20000));
+x=zeros(20000,1);
+x(1)=0.00001;
+f_c = zeros(1,16);
+f_p = zeros(1,16);
+%  Divide the bit stream into 5000 consecutive 4-bit segments
+segments_c = reshape(cipher_text(1:20000), 4,5000);
+segments_p = reshape(pre_pub(1:20000), 4,5000);
+   
+% Count the number of occurrences of each of the 16 possible 4-bit values
+decimal_c = bi2de(segments_c','left-msb');
+decimal_p = bi2de(segments_p','left-msb');
+
+for i=1:1:length(decimal_c)
+    
+     if decimal_c(i)== 0
+        f_c(1) = f_c(1)+1;
+    end
+       if decimal_c(i)== 1
+        f_c(2) = f_c(2)+1;
+       end
+       if decimal_c(i)== 2
+        f_c(3) = f_c(3)+1;
+       end
+       if decimal_c(i)== 3
+        f_c(4) = f_c(4)+1;
+       end
+       if decimal_c(i)== 4
+        f_c(5) = f_c(5)+1;
+       end
+       if decimal_c(i)== 5
+        f_c(6) = f_c(6)+1;
+       end
+       if decimal_c(i)== 6
+        f_c(7) = f_c(7)+1;
+       end
+       if decimal_c(i)== 7
+        f_c(8) = f_c(8)+1;
+       end
+        if decimal_c(i)== 8
+        f_c(9) = f_c(9)+1;
+        end
+        if decimal_c(i)== 9
+        f_c(10) = f_c(10)+1;
+        end
+        if decimal_c(i)== 10
+            f_c(11) = f_c(11)+1;
+        end
+        if decimal_c(i)== 11
+        f_c(12) = f_c(12)+1;
+        end
+        if decimal_c(i)== 12
+        f_c(13) = f_c(13)+1;
+        end
+        if decimal_c(i)== 13
+        f_c(14) = f_c(14)+1;
+        end
+        if decimal_c(i)== 14
+        f_c(15) = f_c(15)+1;
+        end
+        if decimal_c(i)== 15
+        f_c(16) = f_c(16)+1;
+        end
+    
+end
+% p_pre
+%%
+f_p = zeros(1,16);
+for i=1:1:length(decimal_p)
+    
+     if decimal_p(i)== 0
+        f_p(1) = f_p(1)+1;
+    end
+       if decimal_p(i)== 1
+        f_p(2) = f_p(2)+1;
+       end
+       if decimal_p(i)== 2
+        f_p(3) = f_p(3)+1;
+       end
+       if decimal_p(i)== 3
+        f_p(4) = f_p(4)+1;
+       end
+       if decimal_p(i)== 4
+        f_p(5) = f_p(5)+1;
+       end
+       if decimal_p(i)== 5
+        f_p(6) = f_p(6)+1;
+       end
+       if decimal_p(i)== 6
+        f_p(7) = f_p(7)+1;
+       end
+       if decimal_p(i)== 7
+        f_p(8) = f_p(8)+1;
+       end
+        if decimal_p(i)== 8
+        f_p(9) = f_p(9)+1;
+        end
+        if decimal_p(i)== 9
+        f_p(10) = f_p(10)+1;
+        end
+        if decimal_p(i)== 10
+            f_p(11) = f_p(11)+1;
+        end
+        if decimal_p(i)== 11
+        f_p(12) = f_p(12)+1;
+        end
+        if decimal_p(i)== 12
+        f_p(13) = f_p(13)+1;
+        end
+        if decimal_p(i)== 13
+        f_p(14) = f_p(14)+1;
+        end
+        if decimal_p(i)== 14
+        f_p(15) = f_p(15)+1;
+        end
+        if decimal_p(i)== 15
+        f_p(16) = f_p(16)+1;
+        end
+    
+end
+
+% Evaluate the Poker Test using a formula that takes into account the number of occurrences of each value
+% counts = norm(f).^2;
+% poker_test = ((16/5000) * counts) - (5000)
+% Calculate the sum of squares of the elements in f
+sum_of_squares_c = sum(f_c.^2);
+sum_of_squares_p = sum(f_p.^2);
+
+
+% Calculate the expression
+result_c(jj) = (16/5000) * (sum_of_squares_c) - 5000;
+result_p(jj) = (16/5000) * (sum_of_squares_p) - 5000;
+poker_C(jj) = result_c(jj);
+poker_p(jj) = result_p(jj);
+%% Runs test
+x=zeros(20000,1);
+count = zeros(length(x),1);
+result = zeros(length(x),1);
+n=1;
+a=0;
+bit=1;
+r = 4;
+% init=0.00001;
+%%
+%ciphre
+onee1_c=0;
+zeroo1_c=0;
+onee2_c=0;
+zeroo2_c=0;
+onee3_c=0;
+zeroo3_c=0;
+onee4_c=0;
+zeroo4_c=0;
+onee5_c=0;
+zeroo5_c=0;
+onee6_c=0;
+zeroo6_c=0;
+onee26_c = 0;
+zeroo26_c = 0;
+
+cahos_seq = cipher_text(1:20000);
+for i=2:length(cahos_seq)
+    if cahos_seq(i-1)~=  cahos_seq(i)
+       count(i-1,1)= 1;   
+    end
+end
+n=1;
+a=0;
+bit=1;
+
+
+for d=1:length(cahos_seq)
+    a=a+1;
+    if  count(d,1)== 1
+        result(n,1)=a;
+      
+            bit=xor(bit,1);      
+            result(n,2)=bit;        
+            a=0;
+    end
+    if a == 0
+        n=n+1;     
+    end
+end
+
+
+for u=1:n-1
+   if result(u,1)==1
+       if result(u,2)==1
+           onee1_c = onee1_c+1;
+       end
+       if result(u,2)==0
+          zeroo1_c = zeroo1_c+1;
+       end
+   end  
+%    
+     if result(u,1)==2
+       if result(u,2)==1
+           onee2_c = onee2_c+1;
+       end
+       if result(u,2)==0
+          zeroo2_c = zeroo2_c+1;
+       end
+     end
+%    
+       if result(u,1)==3
+       if result(u,2)==1
+           onee3_c = onee3_c+1;
+       end
+       if result(u,2)==0
+          zeroo3_c = zeroo3_c+1;
+       end
+       end
+%    
+         if result(u,1)==4
+       if result(u,2)==1
+           onee4_c = onee4_c+1;
+       end
+       if result(u,2)==0
+          zeroo4_c = zeroo4_c+1;
+       end
+         end
+   
+%          
+         if result(u,1)==5
+       if result(u,2)==1
+           onee5_c = onee5_c+1;
+       end
+       if result(u,2)==0
+          zeroo5_c = zeroo5_c+1;
+       end
+         end
+   
+%          
+           if result(u,1)>=6
+       if result(u,2)==1
+           onee6_c = onee6_c+1;
+       end
+       if result(u,2)==0
+          zeroo6_c = zeroo6_c+1;
+       end
+           end     
+           
+           
+                  if result(u,1)==26
+       if result(u,2)==1
+           onee26_c = 1
+       end
+       if result(u,2)==0
+          zeroo26_c = 0
+       end
+                  end 
+           
+                  
+              
+end
+
+run_c_1(jj) = max(onee1_c,zeroo1_c);
+run_c_2(jj) = max(onee2_c,zeroo2_c);
+run_c_3(jj) = max(onee3_c,zeroo3_c);
+run_c_4(jj) = max(onee4_c,zeroo4_c);
+run_c_5(jj) = max(onee5_c,zeroo5_c);
+run_c_6(jj) = max(onee6_c,zeroo6_c);
+run_c_26(jj) = max(onee26_c,zeroo26_c);
+
+%% P_pre
+% p
+onee1_p=0;
+zeroo1_p=0;
+onee2_p=0;
+zeroo2_p=0;
+onee3_p=0;
+zeroo3_p=0;
+onee4_p=0;
+zeroo4_p=0;
+onee5_p=0;
+zeroo5_p=0;
+onee6_p=0;
+zeroo6_p=0;
+onee26_p = 0;
+zeroo26_p = 0;
+%%
+x_p=zeros(20000,1);
+count_p = zeros(length(x_p),1);
+result_p = zeros(length(x_p),1);
+n_p=1;
+a_p=0;
+bit_p=1;
+r_p = 4;
+%%
+onee1_p=0;
+zeroo1_p=0;
+onee2_p=0;
+zeroo2_p=0;
+onee3_p=0;
+zeroo3_p=0;
+onee4_p=0;
+zeroo4_p=0;
+onee5_p=0;
+zeroo5_p=0;
+onee6_p=0;
+zeroo6_p=0;
+%%  RUN test
+
+pre_pub = pre_pub(1:20000);
+for i=2:length(pre_pub)
+    if pre_pub(i-1)~=  pre_pub(i)
+        count_p(i-1,1)= 1;
+    end
+end
+n_p=1;
+a_p=0;
+bit_p=1;
+
+
+for d=1:length(pre_pub)
+    a_p=a_p+1;
+    if  count_p(d,1)== 1
+        result_p(n_p,1)=a_p;
+
+        bit_p=xor(bit_p,1);
+        result_p(n_p,2)=bit_p;
+        a_p=0;
+    end
+    if a_p == 0
+        n_p=n_p+1;
+    end
+end
+
+
+for u=1:n_p-1
+    if result_p(u,1)==1
+        if result_p(u,2)==1
+            onee1_p = onee1_p+1;
+        end
+        if result_p(u,2)==0
+            zeroo1_p = zeroo1_p+1;
+        end
+    end
+    %
+    if result_p(u,1)==2
+        if result_p(u,2)==1
+            onee2_p = onee2_p+1;
+        end
+        if result_p(u,2)==0
+            zeroo2_p = zeroo2_p+1;
+        end
+    end
+    %
+    if result_p(u,1)==3
+        if result_p(u,2)==1
+            onee3_p = onee3_p+1;
+        end
+        if result_p(u,2)==0
+            zeroo3_p = zeroo3_p+1;
+        end
+    end
+    %
+    if result_p(u,1)==4
+        if result_p(u,2)==1
+            onee4_p = onee4_p+1;
+        end
+        if result_p(u,2)==0
+            zeroo4_p = zeroo4_p+1;
+        end
+    end
+
+    %
+    if result_p(u,1)==5
+        if result_p(u,2)==1
+            onee5_p = onee5_p+1;
+        end
+        if result_p(u,2)==0
+            zeroo5_p = zeroo5_p+1;
+        end
+    end
+
+    %
+    if result_p(u,1)>=6
+        if result_p(u,2)==1
+            onee6_p = onee6_p+1;
+        end
+        if result_p(u,2)==0
+            zeroo6_p = zeroo6_p+1;
+        end
+    end
+
+
+    if result_p(u,1)==26
+        if result_p(u,2)==1
+            onee26_p = 1;
+        end
+        if result_p(u,2)==0
+            zeroo26_p = 0;
+        end
+    end
+end
+run_p_1(jj) = max(onee1_p,zeroo1_p);
+run_p_2(jj) = max(onee2_p,zeroo2_p);
+run_p_3(jj) = max(onee3_p,zeroo3_p);
+run_p_4(jj) = max(onee4_p,zeroo4_p);
+run_p_5(jj) = max(onee5_p,zeroo5_p);
+run_p_6(jj) = max(onee6_p,zeroo6_p);
+run_p_26(jj) = max(onee26_p,zeroo26_p);
+
+
+end
+toc
+%% Sorting the range
+Monobit_c = sort(Monobit_c);
+Monobit_p = sort(Monobit_p);
+
+poker_C = sort(poker_C);
+poker_p = sort(poker_p);
+
+run_c_1 = sort(run_c_1);
+run_c_2 = sort(run_c_2);
+run_c_3 = sort(run_c_3);
+run_c_4 = sort(run_c_4);
+run_c_5 = sort(run_c_5);
+run_c_6 = sort(run_c_6);
+run_c_26 = sort(run_c_26);
+
+run_p_1 = sort(run_p_1);
+run_p_2 = sort(run_p_2);
+run_p_3 = sort(run_p_3);
+run_p_4 = sort(run_p_4);
+run_p_5 = sort(run_p_5);
+run_p_6 = sort(run_p_6);
+run_p_26 = sort(run_p_26);
+%% Validation
+% Monobit
+Mobit_c_v = sum(Monobit_c >= 9725 & Monobit_c <= 10275);
+Mobit_p_v = sum(Monobit_p >= 9725 & Monobit_p <= 10275);
+Mobit_c_v = Mobit_c_v/1000;
+Mobit_p_v = Mobit_p_v/1000;
+disp(['Mobit_c_v: ' num2str(Mobit_c_v)]);
+disp(['Mobit_p_v: ' num2str(Mobit_p_v)]);
+% Poker
+poker_c_v = sum(poker_C >= 2.16 & poker_C <= 46.17);
+poker_p_v = sum(poker_p >= 2.16 & poker_p <= 46.17);
+poker_c_v = poker_c_v/1000;
+poker_p_v = poker_p_v/1000;
+disp(['poker_c_v: ' num2str(poker_c_v)]);
+disp(['poker_p_v: ' num2str(poker_p_v)]);
+% Run
+run_c_1_v = sum(run_c_1 >= 2343 & run_c_1 <= 2657);
+run_c_1_v = run_c_1_v/1000;
+disp(['run_c_1_v: ' num2str(run_c_1_v)]);
+run_c_2_v = sum(run_c_2 >= 1135 & run_c_2 <= 1365);
+run_c_2_v = run_c_2_v/1000;
+disp(['run_c_2_v: ' num2str(run_c_2_v)]);
+run_c_3_v = sum(run_c_3 >= 542 & run_c_3 <= 708);
+run_c_3_v = run_c_3_v/1000;
+disp(['run_c_3_v: ' num2str(run_c_3_v)]);
+run_c_4_v = sum(run_c_4 >= 251 & run_c_4 <= 373);
+run_c_4_v = run_c_4_v/1000;
+disp(['run_c_4_v: ' num2str(run_c_4_v)]);
+run_c_5_v = sum(run_c_5 >= 111 & run_c_5 <= 201);
+run_c_5_v = run_c_5_v/1000;
+disp(['run_c_5_v: ' num2str(run_c_5_v)]);
+run_c_6_v = sum(run_c_6 >= 111 & run_c_6 <= 201);
+run_c_6_v = run_c_6_v/1000;
+disp(['run_c_6_v: ' num2str(run_c_6_v)]);
+run_c_26_v = sum(run_c_26==0);
+run_c_26_v = run_c_26_v/1000;
+disp(['run_c_26_v: ' num2str(run_c_26_v)]);
+
+run_p_1_v = sum(run_p_1 >= 2343 & run_p_1 <= 2657);
+run_p_1_v = run_p_1_v/1000;
+disp(['run_p_1_v: ' num2str(run_p_1_v)]);
+
+run_p_2_v = sum(run_p_2 >= 1135 & run_p_2 <= 1365);
+run_p_2_v = run_p_2_v/1000;
+disp(['run_p_2_v: ' num2str(run_p_2_v)]);
+
+run_p_3_v = sum(run_p_3 >= 542 & run_p_3 <= 708);
+run_p_3_v = run_p_3_v/1000;
+disp(['run_p_3_v: ' num2str(run_p_3_v)]);
+
+run_p_4_v = sum(run_p_4 >= 251 & run_p_4 <= 373);
+run_p_4_v = run_p_4_v/1000;
+disp(['run_p_4_v: ' num2str(run_p_4_v)]);
+
+
+run_p_5_v = sum(run_p_5 >= 111 & run_p_5 <= 201);
+run_p_5_v = run_p_5_v/1000;
+disp(['run_p_5_v: ' num2str(run_p_5_v)]);
+
+
+run_p_6_v = sum(run_p_6 >= 111 & run_p_6 <= 201);
+run_p_6_v = run_p_6_v/1000;
+disp(['run_p_6_v: ' num2str(run_p_6_v)]);
+
+
+run_p_26_v = sum(run_p_26==0);
+run_p_26_v = run_p_26_v/1000;
+disp(['run_p_26_v: ' num2str(run_p_26_v)]);
+%% Plot
+    figure;
+histogram(Monobit_c(:), 'Normalization', 'pdf');
+xlabel('Monobit Values');
+ylabel('Probability');
+title('Probability Distribution Function (PDF) of Monobit(ciphertext)');
+    
+
+    % Estimate the PDF using ksdensity
+% [f, xi] = ksdensity(Monobit_c);
+% 
+% % Plot the PDF
+% figure;
+% plot(xi, f);
+% xlabel('Value');
+% ylabel('Probability Density');
+% title('Probability Density Function (PDF) of Output Vector');
